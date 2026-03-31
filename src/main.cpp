@@ -4,6 +4,7 @@
 /* clang-format on */
 #include "buffer_object.hpp"
 #include "shader.hpp"
+#include <cassert>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -162,6 +163,9 @@ void mouse_button_callback(GLFWwindow *window, int button, int action,
 Mesh parse_objfile(const fs::path &path) {
   std::ifstream objfile{path};
   std::string line{};
+  if (!fs::exists(path)) {
+    std::println(stderr, "File '{}' does not exist.", path.c_str());
+  }
   while (std::getline(objfile, line)) {
     std::println("{}", line);
   }
@@ -356,12 +360,12 @@ int main() {
   ImGui_ImplGlfw_InitForOpenGL(window.get(), true);
 
   ImGuiIO &io = ImGui::GetIO();
-  ImFont *regular_font = io.Fonts->AddFontFromFileTTF(
-      "/home/arvk/.local/share/fonts/CommitMono/CommitMono-400-Regular.otf");
-  ImFont *bold_font = io.Fonts->AddFontFromFileTTF(
-      "/home/arvk/.local/share/fonts/CommitMono/CommitMono-700-Regular.otf");
+  ImFont *regular_font =
+      io.Fonts->AddFontFromFileTTF("./fonts/CommitMono-400-Regular.otf");
+  ImFont *bold_font =
+      io.Fonts->AddFontFromFileTTF("./fonts/CommitMono-400-Regular.otf");
 
-  parse_objfile("../cube.obj");
+  parse_objfile("./cube.obj");
 
   while (!glfwWindowShouldClose(window.get())) {
     std::string mode_info{};
@@ -513,10 +517,10 @@ int main() {
         g_editor_mode != EditorMode::Normal) {
       g_manipulation_axis = ManipulationAxis::Z;
     }
-  }
 
-  if (g_selected_object == 0) {
-    g_selected_mesh = &placeholder_mesh;
+    if (g_selected_object == 0) {
+      g_selected_mesh = &placeholder_mesh;
+    }
   }
 
   glfwTerminate();
