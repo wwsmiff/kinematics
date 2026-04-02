@@ -5,6 +5,7 @@
 #include "buffer_object.hpp"
 #include "shader.hpp"
 #include <cassert>
+#include <charconv>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -42,13 +43,17 @@ struct Mesh {
   int32_t id{g_object_id};
   std::vector<glm::vec3> vertices{};
   std::vector<uint32_t> indices{};
-  glm::mat4 model{};
+  glm::mat4 model{1.0f};
   glm::mat4 position{1.0f};
   glm::mat4 rotation{1.0f};
 
   void draw() {
     glStencilFunc(GL_ALWAYS, g_object_id, 0xFF);
-    glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    if (indices.empty()) {
+      glDrawArrays(GL_TRIANGLES, 0, vertices.size());
+    } else {
+      glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    }
   }
 };
 
@@ -90,22 +95,22 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
   if (g_editor_mode == EditorMode::Rotation &&
       g_manipulation_axis == ManipulationAxis::X) {
     float x_theta = glm::radians(static_cast<float>(curr_mouse_y - g_mouse_y));
-    g_x_theta += x_theta;
-    g_x_theta = std::fmod(g_x_theta, 2 * std::numbers::pi_v<float>);
+    g_x_theta += glm::degrees(x_theta);
+    g_x_theta = std::fmod(g_x_theta, 360.0f);
     g_selected_mesh->rotation = glm::rotate(g_selected_mesh->rotation, x_theta,
                                             glm::vec3{1.0f, 0.0f, 0.0f});
   } else if (g_editor_mode == EditorMode::Rotation &&
              g_manipulation_axis == ManipulationAxis::Y) {
     float y_theta = glm::radians(static_cast<float>(curr_mouse_x - g_mouse_x));
-    g_y_theta += y_theta;
-    g_y_theta = std::fmod(g_y_theta, 2 * std::numbers::pi_v<float>);
+    g_y_theta += glm::degrees(y_theta);
+    g_y_theta = std::fmod(g_y_theta, 360.0f);
     g_selected_mesh->rotation = glm::rotate(g_selected_mesh->rotation, y_theta,
                                             glm::vec3{0.0f, 1.0f, 0.0f});
   } else if (g_editor_mode == EditorMode::Rotation &&
              g_manipulation_axis == ManipulationAxis::Z) {
     float z_theta = glm::radians(static_cast<float>(curr_mouse_x - g_mouse_x));
-    g_z_theta += z_theta;
-    g_z_theta = std::fmod(g_z_theta, 2 * std::numbers::pi_v<float>);
+    g_z_theta += glm::degrees(z_theta);
+    g_z_theta = std::fmod(g_z_theta, 360.0f);
     g_selected_mesh->rotation = glm::rotate(g_selected_mesh->rotation, z_theta,
                                             glm::vec3{0.0f, 0.0f, 1.0f});
   }
@@ -161,15 +166,91 @@ void mouse_button_callback(GLFWwindow *window, int button, int action,
 }
 
 Mesh parse_objfile(const fs::path &path) {
+  auto split = [](const std::string &s,
+                  const char d) -> std::vector<std::string> {
+    std::vector<std::string> res{};
+    std::string tmp{};
+    size_t idx{};
+    while (idx < s.size()) {
+      if (d == ' ') {
+        if (std::isspace(s.at(idx))) {
+          res.push_back(tmp);
+          tmp.clear();
+        } else {
+          tmp.push_back(s.at(idx));
+        }
+      } else {
+        if (s.at(idx) == d) {
+          res.push_back(tmp);
+          tmp.clear();
+        } else {
+          tmp.push_back(s.at(idx));
+        }
+      }
+      idx++;
+    }
+
+    res.push_back(tmp);
+
+    return res;
+  };
+
   std::ifstream objfile{path};
   std::string line{};
   if (!fs::exists(path)) {
     std::println(stderr, "File '{}' does not exist.", path.c_str());
   }
+
+  Mesh m{};
+  std::vector<uint32_t> indices{};
+  std::vector<glm::vec3> vertices{};
   while (std::getline(objfile, line)) {
-    std::println("{}", line);
+    const auto tokens = split(line, ' ');
+    const std::string type = tokens.at(0);
+    float x{}, y{}, z{}, w{1.0f};
+    if (type == "v") {
+      if (tokens.size() < 4) {
+        std::println(stderr, "Not enough coordinates for vertex.");
+      }
+      std::from_chars(tokens.at(1).data(),
+                      tokens.at(1).data() + tokens.at(1).size(), x);
+      std::from_chars(tokens.at(2).data(),
+                      tokens.at(2).data() + tokens.at(2).size(), y);
+      std::from_chars(tokens.at(3).data(),
+                      tokens.at(3).data() + tokens.at(3).size(), z);
+      std::println("new vertex pushed {}, {}, {}", x, y, z);
+      vertices.emplace_back(x, y, z);
+    } else if (type == "f") {
+      if (tokens.size() < 2) {
+        std::println(stderr, "Not enough indices for face.");
+      }
+      for (const auto &token : tokens) {
+        if (token == "f") {
+          continue;
+        } else {
+          if (token.find('/') != std::string::npos) {
+            uint32_t idx{};
+            auto face_data = split(token, '/');
+            std::from_chars(face_data.at(0).data(),
+                            face_data.at(0).data() + face_data.at(0).size(),
+                            idx);
+            indices.push_back(idx - 1);
+          }
+        }
+      }
+    }
   }
-  return {};
+
+  if (indices.size() % 3 != 0) {
+    std::println(stderr, "Not enough vertices.");
+  } else {
+    for (size_t i{}; i < indices.size(); i++) {
+      glm::vec3 v = vertices.at(indices.at(i));
+      std::println("Vertex {}, {}, {}", v.x, v.y, v.z);
+      m.vertices.push_back(v);
+    }
+  }
+  return m;
 }
 
 std::string format_rotation(char axis, float theta) {
@@ -276,50 +357,7 @@ int main() {
   selection_shader.load("shaders/selection.frag", ShaderType::Fragment);
   selection_shader.link();
 
-  Mesh cube{};
-  cube.model = glm::mat4{1.0f};
-
-  /* clang-format off */
-  cube.vertices = {
-		// front
-		glm::vec3(-0.5f, 0.5f, 0.5f), glm::vec3(0.7f, 0.7f, 0.7f), 
-		glm::vec3(-0.5f, -0.5f, 0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-		glm::vec3(0.5f, -0.5f, 0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-		glm::vec3(0.5f, 0.5f, 0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-
-		// back
-		glm::vec3(-0.5f, 0.5f, -0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-		glm::vec3(-0.5f, -0.5f, -0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-		glm::vec3(0.5f, -0.5f, -0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-		glm::vec3(0.5f, 0.5f, -0.5f), glm::vec3(0.7f, 0.7f, 0.7f),
-  };
-
-	cube.indices = {
-		// front
-		0, 1, 2,
-		2, 3, 0,
-
-		// back
-		4, 5, 6,
-		6, 7, 4,
-
-		// right
-		3, 2, 6,
-		6, 7, 3,
-
-		// left
-		4, 5, 1,
-		1, 0, 4,
-
-		// top
-		4, 0, 3,
-		3, 7, 4,
-
-		// bottom
-		5, 1, 2,
-		2, 6, 5
-	};
-  /* clang-format on */
+  Mesh cube = parse_objfile("./cube.obj");
 
   uint32_t vao{};
   glGenVertexArrays(1, &vao);
@@ -327,13 +365,9 @@ int main() {
 
   BufferObject<glm::vec3> vbo{};
   vbo.bind(BufferObjectType::Array, cube.vertices);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec3),
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 1 * sizeof(glm::vec3),
                         (void *)(0));
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec3),
-                        (void *)(1 * sizeof(glm::vec3)));
-
   glEnableVertexAttribArray(0);
-  glEnableVertexAttribArray(1);
 
   BufferObject<uint32_t> ebo{};
   ebo.bind(BufferObjectType::Element, cube.indices);
@@ -364,8 +398,6 @@ int main() {
       io.Fonts->AddFontFromFileTTF("./fonts/CommitMono-400-Regular.otf");
   ImFont *bold_font =
       io.Fonts->AddFontFromFileTTF("./fonts/CommitMono-400-Regular.otf");
-
-  parse_objfile("./cube.obj");
 
   while (!glfwWindowShouldClose(window.get())) {
     std::string mode_info{};
