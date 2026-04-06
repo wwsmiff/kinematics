@@ -28,6 +28,7 @@ namespace fs = std::filesystem;
 
 static float g_camera_yaw{-90.0f};
 static float g_camera_pitch{};
+static float g_camera_distance{10.0f};
 double g_mouse_x{}, g_mouse_y{};
 uint8_t g_stencil{};
 uint8_t g_selected_object{};
@@ -93,6 +94,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
   }
 
   if (g_editor_mode == EditorMode::Rotation &&
+      g_selected_object > 0 &&
       g_manipulation_axis == ManipulationAxis::X) {
     float x_theta = glm::radians(static_cast<float>(curr_mouse_y - g_mouse_y));
     g_x_theta += glm::degrees(x_theta);
@@ -100,6 +102,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
     g_selected_mesh->rotation = glm::rotate(g_selected_mesh->rotation, x_theta,
                                             glm::vec3{1.0f, 0.0f, 0.0f});
   } else if (g_editor_mode == EditorMode::Rotation &&
+             g_selected_object > 0 &&
              g_manipulation_axis == ManipulationAxis::Y) {
     float y_theta = glm::radians(static_cast<float>(curr_mouse_x - g_mouse_x));
     g_y_theta += glm::degrees(y_theta);
@@ -107,6 +110,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
     g_selected_mesh->rotation = glm::rotate(g_selected_mesh->rotation, y_theta,
                                             glm::vec3{0.0f, 1.0f, 0.0f});
   } else if (g_editor_mode == EditorMode::Rotation &&
+              g_selected_object > 0 &&
              g_manipulation_axis == ManipulationAxis::Z) {
     float z_theta = glm::radians(static_cast<float>(curr_mouse_x - g_mouse_x));
     g_z_theta += glm::degrees(z_theta);
@@ -116,6 +120,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
   }
 
   if (g_editor_mode == EditorMode::Translation &&
+      g_selected_object > 0 &&
       g_manipulation_axis == ManipulationAxis::X) {
     g_x_translation += static_cast<float>(curr_mouse_x - g_mouse_x) / 250.0f;
     g_selected_mesh->position = glm::translate(
@@ -123,6 +128,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
         glm::vec3{static_cast<float>(curr_mouse_x - g_mouse_x) / 250.0f, 0.0f,
                   0.0f});
   } else if (g_editor_mode == EditorMode::Translation &&
+             g_selected_object > 0 &&
              g_manipulation_axis == ManipulationAxis::Y) {
     g_y_translation += static_cast<float>(g_mouse_y - curr_mouse_y) / 250.0f;
     g_selected_mesh->position = glm::translate(
@@ -130,6 +136,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
         glm::vec3{0.0f, static_cast<float>(g_mouse_y - curr_mouse_y) / 250.0f,
                   0.0f});
   } else if (g_editor_mode == EditorMode::Translation &&
+              g_selected_object > 0 &&
              g_manipulation_axis == ManipulationAxis::Z) {
     g_z_translation += static_cast<float>(g_mouse_y - curr_mouse_y) / 250.0f;
     g_selected_mesh->position = glm::translate(
@@ -357,7 +364,8 @@ int main() {
   selection_shader.load("shaders/selection.frag", ShaderType::Fragment);
   selection_shader.link();
 
-  Mesh cube = parse_objfile("./cube.obj");
+  Mesh cube = parse_objfile("./endeffector.obj");
+
 
   uint32_t vao{};
   glGenVertexArrays(1, &vao);
@@ -450,7 +458,7 @@ int main() {
 
     glBindVertexArray(vao);
 
-    view = glm::lookAt(camera_pos, camera_pos + camera_front, camera_up);
+    view = glm::lookAt(camera_pos, glm::vec3(0.0f, 0.0f, 0.0f), camera_up);
 
     // wireframe
     wireframe_shader.use();
@@ -489,14 +497,14 @@ int main() {
     direction.z = std::sinf(glm::radians(g_camera_yaw)) *
                   std::cosf(glm::radians(g_camera_pitch));
     direction.y = std::sinf(glm::radians(g_camera_pitch));
-
-    camera_front = glm::normalize(direction);
+    camera_pos = g_camera_distance * direction;
+    camera_front = glm::normalize(glm::vec3(0.0f) - camera_pos);
 
     // process input
     if (glfwGetKey(window.get(), GLFW_KEY_W) == GLFW_PRESS) {
-      camera_pos += camera_front * 0.1f;
+      g_camera_distance -= 0.1f;
     } else if (glfwGetKey(window.get(), GLFW_KEY_S) == GLFW_PRESS) {
-      camera_pos -= camera_front * 0.1f;
+      g_camera_distance += 0.1f;
     }
 
     if (glfwGetKey(window.get(), GLFW_KEY_A) == GLFW_PRESS) {
