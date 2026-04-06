@@ -1,6 +1,7 @@
 #include "buffer_object.hpp"
 #include "camera.hpp"
 #include "shader.hpp"
+
 #include <GLFW/glfw3.h>
 #include <cassert>
 #include <charconv>
@@ -16,6 +17,7 @@
 #include <memory>
 #include <numbers>
 #include <print>
+#include <stack>
 #include <utility>
 
 #include "backends/imgui_impl_glfw.h"
@@ -148,7 +150,6 @@ struct Mesh {
                           (void *)(0));
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
-    std::println("{} vertices loaded.", vertices.size());
   }
 
   void draw(ShaderProgram &shader) {
@@ -169,6 +170,16 @@ struct Mesh {
   }
 };
 
+struct UndoData {
+  uint32_t mesh_id{};
+  glm::mat4 position{};
+  glm::mat4 rotation{};
+};
+
+std::stack<UndoData> g_undo_stack{};
+bool g_change_recorded{};
+bool g_change_undone{};
+
 Mesh placeholder_mesh{};
 Mesh *g_selected_mesh{&placeholder_mesh};
 std::vector<Mesh *> g_meshes{};
@@ -176,11 +187,17 @@ std::vector<Mesh *> g_meshes{};
 constexpr uint32_t window_width{1280};
 constexpr uint32_t window_height{720};
 
-enum class EditorMode : uint8_t { Normal, Rotation, Translation, NumModes };
+enum class EditorMode : uint8_t {
+  Normal,
+  Undo,
+  Rotation,
+  Translation,
+  NumModes
+};
 enum class ManipulationAxis : uint8_t { None, X, Y, Z, NumAxes };
 
 constexpr const char *const editor_mode_str[static_cast<int32_t>(
-    EditorMode::NumModes)] = {"Normal", "Rotation", "Translation"};
+    EditorMode::NumModes)] = {"Normal", "Undo", "Rotation", "Translation"};
 
 constexpr const char *const manipulation_axis_str[static_cast<int32_t>(
     ManipulationAxis::NumAxes)] = {"??", "X", "Y", "Z"};
@@ -204,11 +221,8 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
     camera.ytheta -= (g_mouse_y - curr_mouse_y) * 0.1f;
   }
 
-  if (g_editor_mode == EditorMode::Normal) {
-    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-    }
-  } else if (g_editor_mode == EditorMode::Rotation && g_selected_object > 0 &&
-             g_manipulation_axis == ManipulationAxis::X) {
+  if (g_editor_mode == EditorMode::Rotation && g_selected_object > 0 &&
+      g_manipulation_axis == ManipulationAxis::X) {
     float x_theta = glm::radians(static_cast<float>(curr_mouse_y - g_mouse_y));
     g_x_theta += glm::degrees(x_theta);
     g_x_theta = std::fmod(g_x_theta, 360.0f);
@@ -342,6 +356,7 @@ std::string format_translation() {
 }
 
 int main() {
+
   std::ifstream object_states_in("object_states.json");
   nlohmann::json matrix_data{};
   object_states_in >> matrix_data;
@@ -417,6 +432,22 @@ int main() {
   segment3.load_from_objfile("./RoboticArm/segment3.obj");
   g_meshes.push_back(&segment3);
 
+  Mesh cylinder1{};
+  cylinder1.load_from_objfile("./RoboticArm/cylinder.obj");
+  g_meshes.push_back(&cylinder1);
+
+  Mesh cylinder2{};
+  cylinder2.load_from_objfile("./RoboticArm/cylinder.obj");
+  g_meshes.push_back(&cylinder2);
+
+  Mesh cylinder3{};
+  cylinder3.load_from_objfile("./RoboticArm/cylinder.obj");
+  g_meshes.push_back(&cylinder3);
+
+  Mesh cylinder4{};
+  cylinder4.load_from_objfile("./RoboticArm/cylinder.obj");
+  g_meshes.push_back(&cylinder4);
+
   std::vector<float> flattened_matrix{};
 
   matrix_data["endeffector"]["position"].get_to(flattened_matrix);
@@ -449,6 +480,24 @@ int main() {
   segment3.rotation = glm::make_mat4(flattened_matrix.data());
   segment3.model = segment3.position * segment3.rotation;
 
+  matrix_data["cylinder1"]["position"].get_to(flattened_matrix);
+  cylinder1.position = glm::make_mat4(flattened_matrix.data());
+  matrix_data["cylinder1"]["rotation"].get_to(flattened_matrix);
+  cylinder1.rotation = glm::make_mat4(flattened_matrix.data());
+  cylinder1.model = cylinder1.position * cylinder1.rotation;
+
+  matrix_data["cylinder2"]["position"].get_to(flattened_matrix);
+  cylinder2.position = glm::make_mat4(flattened_matrix.data());
+  matrix_data["cylinder2"]["rotation"].get_to(flattened_matrix);
+  cylinder2.rotation = glm::make_mat4(flattened_matrix.data());
+  cylinder2.model = cylinder2.position * cylinder2.rotation;
+
+  matrix_data["cylinder3"]["position"].get_to(flattened_matrix);
+  cylinder3.position = glm::make_mat4(flattened_matrix.data());
+  matrix_data["cylinder3"]["rotation"].get_to(flattened_matrix);
+  cylinder3.rotation = glm::make_mat4(flattened_matrix.data());
+  cylinder3.model = cylinder3.position * cylinder3.rotation;
+
   projection = glm::perspective(glm::radians(45.0f),
                                 static_cast<float>(window_width) /
                                     static_cast<float>(window_height),
@@ -468,7 +517,8 @@ int main() {
 
   while (!glfwWindowShouldClose(window.get())) {
     std::string mode_info{};
-    if (g_editor_mode != EditorMode::Normal) {
+    if (g_editor_mode != EditorMode::Normal &&
+        g_editor_mode != EditorMode::Undo) {
       mode_info = std::format(
           "Mode: {} Along {} Axis",
           editor_mode_str[static_cast<uint32_t>(g_editor_mode)],
@@ -559,11 +609,21 @@ int main() {
     }
 
     if (glfwGetKey(window.get(), GLFW_KEY_A) == GLFW_PRESS) {
-      camera.offset.z -= 0.1f;
+      camera.offset +=
+          glm::normalize(glm::cross(camera.up, camera.front())) * 0.1f;
     } else if (glfwGetKey(window.get(), GLFW_KEY_D) == GLFW_PRESS) {
-      camera.offset.z += 0.1f;
+      camera.offset -=
+          glm::normalize(glm::cross(camera.up, camera.front())) * 0.1f;
     }
 
+    if ((g_editor_mode != EditorMode::Normal) &&
+        (g_editor_mode != EditorMode::Undo) && !g_change_recorded) {
+      if (g_selected_object > 0) {
+        g_undo_stack.push({g_selected_object, g_selected_mesh->position,
+                           g_selected_mesh->rotation});
+      }
+      g_change_recorded = true;
+    }
     if (g_editor_mode == EditorMode::Normal) {
       g_x_theta = 0.0f;
       g_y_theta = 0.0f;
@@ -572,6 +632,8 @@ int main() {
       g_x_translation = 0.0f;
       g_y_translation = 0.0f;
       g_z_translation = 0.0f;
+
+      g_change_recorded = false;
     }
 
     if (glfwGetKey(window.get(), GLFW_KEY_Q) == GLFW_PRESS) {
@@ -607,6 +669,36 @@ int main() {
     if (glfwGetKey(window.get(), GLFW_KEY_Z) == GLFW_PRESS &&
         g_editor_mode != EditorMode::Normal) {
       g_manipulation_axis = ManipulationAxis::Z;
+    }
+
+    if (glfwGetKey(window.get(), GLFW_KEY_U) == GLFW_PRESS &&
+        g_editor_mode == EditorMode::Normal) {
+      g_editor_mode = EditorMode::Undo;
+    }
+
+    if (g_editor_mode == EditorMode::Undo && !g_change_undone) {
+      if (!g_undo_stack.empty()) {
+        UndoData undo = g_undo_stack.top();
+        g_undo_stack.pop();
+        g_change_undone = true;
+
+        for (size_t i{}; i < g_meshes.size(); ++i) {
+          if (g_meshes.at(i)->id == undo.mesh_id) {
+            std::println("Undo performed for mesh {}", undo.mesh_id);
+            g_meshes.at(i)->position = undo.position;
+            g_meshes.at(i)->rotation = undo.rotation;
+            g_meshes.at(i)->model =
+                g_meshes.at(i)->position * g_meshes.at(i)->rotation;
+            break;
+          }
+        }
+      }
+    }
+
+    if ((glfwGetKey(window.get(), GLFW_KEY_U) == GLFW_RELEASE) &&
+        g_change_undone && (g_editor_mode == EditorMode::Undo)) {
+      g_editor_mode = EditorMode::Normal;
+      g_change_undone = false;
     }
 
     if (g_selected_object == 0) {
@@ -647,6 +739,22 @@ int main() {
            {"position", flatten_model_matrix(segment3.position)},
            {"rotation", flatten_model_matrix(segment3.rotation)},
        }},
+
+      {"cylinder1",
+       {{"position", flatten_model_matrix(cylinder1.position)},
+        {"rotation", flatten_model_matrix(cylinder1.rotation)}}},
+
+      {"cylinder2",
+       {{"position", flatten_model_matrix(cylinder2.position)},
+        {"rotation", flatten_model_matrix(cylinder2.rotation)}}},
+
+      {"cylinder3",
+       {{"position", flatten_model_matrix(cylinder3.position)},
+        {"rotation", flatten_model_matrix(cylinder3.rotation)}}},
+
+      {"cylinder4",
+       {{"position", flatten_model_matrix(cylinder4.position)},
+        {"rotation", flatten_model_matrix(cylinder4.rotation)}}},
 
   };
 

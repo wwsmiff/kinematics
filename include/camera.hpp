@@ -10,7 +10,7 @@ struct Camera {
   float distance{15.0f};
   glm::vec3 target{0.0f, 0.0f, 0.0f};
   glm::vec3 up{0.0f, 1.0f, 0.0f};
-  glm::vec3 front{0.0f, 0.0f, -1.0f};
+  glm::vec3 right{-1.0f, 0.0f, 0.0f};
   glm::vec3 offset{};
   float xtheta{};
   float ytheta{};
@@ -30,4 +30,6 @@ struct Camera {
   }
 
   glm::vec3 position() { return distance * direction(); }
+
+  glm::vec3 front() { return glm::normalize(direction()); }
 };
