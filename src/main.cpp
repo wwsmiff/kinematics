@@ -497,15 +497,12 @@ int main() {
 
     // process input
     if (glfwGetKey(window.get(), GLFW_KEY_W) == GLFW_PRESS) {
-<<<<<<< Updated upstream
       g_camera_distance -= 0.1f;
     } else if (glfwGetKey(window.get(), GLFW_KEY_S) == GLFW_PRESS) {
       g_camera_distance += 0.1f;
-=======
       camera_pos += camera_front * 0.3f;
     } else if (glfwGetKey(window.get(), GLFW_KEY_S) == GLFW_PRESS) {
       camera_pos -= camera_front * 0.3f;
->>>>>>> Stashed changes
     }
 
     if (glfwGetKey(window.get(), GLFW_KEY_A) == GLFW_PRESS) {
