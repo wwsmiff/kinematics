@@ -360,7 +360,7 @@ int main() {
   selection_shader.load("shaders/selection.frag", ShaderType::Fragment);
   selection_shader.link();
 
-  Mesh cube = parse_objfile("./endeffector.obj");
+  Mesh cube = parse_objfile("./RoboticArm/endeffector.obj");
 
   uint32_t vao{};
   glGenVertexArrays(1, &vao);
@@ -500,15 +500,6 @@ int main() {
       g_camera_distance -= 0.1f;
     } else if (glfwGetKey(window.get(), GLFW_KEY_S) == GLFW_PRESS) {
       g_camera_distance += 0.1f;
-      camera_pos += camera_front * 0.3f;
-    } else if (glfwGetKey(window.get(), GLFW_KEY_S) == GLFW_PRESS) {
-      camera_pos -= camera_front * 0.3f;
-    }
-
-    if (glfwGetKey(window.get(), GLFW_KEY_A) == GLFW_PRESS) {
-      camera_pos -= glm::normalize(glm::cross(camera_front, camera_up)) * 0.2f;
-    } else if (glfwGetKey(window.get(), GLFW_KEY_D) == GLFW_PRESS) {
-      camera_pos += glm::normalize(glm::cross(camera_front, camera_up)) * 0.2f;
     }
 
     if (g_editor_mode == EditorMode::Normal) {
