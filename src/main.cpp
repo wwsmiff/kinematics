@@ -90,7 +90,7 @@ void mouse_move_callback(GLFWwindow *window, double curr_mouse_x,
                          double curr_mouse_y) {
   if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
     g_camera_yaw += (curr_mouse_x - g_mouse_x) * 0.1f;
-    g_camera_pitch -= (curr_mouse_y - g_mouse_y) * 0.1f;
+    g_camera_pitch -= (g_mouse_y - curr_mouse_y) * 0.1f;
   }
 
   if (g_editor_mode == EditorMode::Rotation && g_selected_object > 0 &&
